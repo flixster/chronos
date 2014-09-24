@@ -7,13 +7,42 @@ import org.apache.mesos.Protos.TaskStatus
 import com.datastax.driver.core.exceptions.{DriverException, QueryValidationException, QueryExecutionException, NoHostAvailableException}
 import java.util.logging.{Level, Logger}
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import java.util.concurrent.ConcurrentHashMap
 
+object CurrentState extends Enumeration {
+	type CurrentState = Value
+	val idle, queued, running = Value
+}
+
 class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: CassandraConfiguration) {
+
+  protected val jobStates = new mutable.HashMap[String, CurrentState.Value]()
 
   val log = Logger.getLogger(getClass.getName)
   var _session: Option[Session] = None
   val statements  = new ConcurrentHashMap[String, PreparedStatement]().asScala
+
+  def getJobState(jobName: String) : String = {
+    /**
+     * MIKE NOTE: currently everything stored in memory, look into moving
+     * this to Cassandra. ZK is not an option cause serializers and
+     * deserializers need to be written. Need a good solution, potentially
+     * lots of writes and very few reads (only on failover)
+     */
+    val status = jobStates.get(jobName) match {
+      case Some(s) =>
+        s.toString()
+      case _ =>
+        CurrentState.idle.toString()
+    }
+    status
+  }
+
+  def updateJobState(jobName: String, state: CurrentState.Value) {
+    log.info("Updating state for job (%s) to %s".format(jobName, state))
+	jobStates.put(jobName, state)
+  }
 
   def getSession: Option[Session] = {
     _session match {
@@ -65,7 +94,12 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
     _session = None
   }
 
+  def jobQueued(job: BaseJob, attempt: Int) {
+    updateJobState(job.name, CurrentState.queued)
+  }
+
   def jobStarted(job: BaseJob, taskStatus: TaskStatus, attempt: Int) {
+    updateJobState(job.name, CurrentState.running)
     try {
       getSession match {
         case Some(session: Session) =>
@@ -121,6 +155,7 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
     }
   }
   def jobFinished(job: BaseJob, taskStatus: TaskStatus, attempt: Int) {
+    updateJobState(job.name, CurrentState.idle)
     try {
       getSession match {
         case Some(session: Session) =>
@@ -176,6 +211,7 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
     }
   }
   def jobFailed(job: BaseJob, taskStatus: TaskStatus, attempt: Int) {
+    updateJobState(job.name, CurrentState.idle)
     try {
       getSession match {
         case Some(session: Session) =>
