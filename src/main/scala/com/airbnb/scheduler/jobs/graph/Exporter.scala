@@ -7,6 +7,7 @@ import com.airbnb.scheduler.graph.JobGraph
 import com.airbnb.scheduler.jobs.BaseJob
 import org.jgrapht.graph.DefaultEdge
 import org.joda.time.DateTime
+import com.airbnb.scheduler.jobs.JobScheduler
 
 /**
  * @author Florian Leibert (flo@leibert.de)
@@ -31,12 +32,12 @@ object Exporter {
     }
   }
 
-  def export(w: Writer, jobGraph: JobGraph) {
+  def export(w: Writer, jobGraph: JobGraph, jobScheduler: JobScheduler) {
     val dag = jobGraph.dag
     val jobMap = new HashMap[String, BaseJob]
     import scala.collection.JavaConversions._
     dag.vertexSet.flatMap(jobGraph.lookupVertex).foreach(x => jobMap.put(x.name, x))
-    jobMap.foreach({ case (k, v) => w.write("node,%s,%s\n".format(k,getLastState(v).toString)) })
+    jobMap.foreach({ case (k, v) => w.write("node,%s,%s,%s\n".format(k,getLastState(v).toString,jobScheduler.jobStats.getJobState(k).toString()) ) })
     for (e: DefaultEdge <- dag.edgeSet) {
       val source = dag.getEdgeSource(e)
       val target = dag.getEdgeTarget(e)
