@@ -35,6 +35,5 @@ class HistogramSerializer extends JsonSerializer[Histogram] {
     json.writeNumber(snapshot.size())
 
     json.writeEndObject()
-    json.close()
   }
 }
