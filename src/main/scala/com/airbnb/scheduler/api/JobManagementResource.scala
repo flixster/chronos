@@ -10,6 +10,11 @@ import scala.collection.mutable.ListBuffer
 import com.airbnb.scheduler.config.SchedulerConfiguration
 import com.airbnb.scheduler.graph.JobGraph
 import com.airbnb.scheduler.jobs._
+import com.codahale.metrics.Histogram
+import com.datastax.driver.core.Row
+import com.datastax.driver.core.ColumnDefinitions
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.module.SimpleModule
 import com.google.inject.Inject
 import com.codahale.metrics.annotation.Timed
 import org.joda.time.{DateTimeZone, DateTime}
@@ -28,6 +33,13 @@ class JobManagementResource @Inject()(val jobScheduler: JobScheduler,
                                       val jobMetrics: JobMetrics) {
 
   private[this] val log = Logger.getLogger(getClass.getName)
+
+  private val objectMapper = new ObjectMapper
+  private val mod =  new SimpleModule("JobManagementResourceModule")
+
+  mod.addSerializer(classOf[Histogram], new HistogramSerializer)
+  mod.addSerializer(classOf[JobStatWrapper], new JobStatWrapperSerializer)
+  objectMapper.registerModule(mod)
 
   @Path(PathConstants.jobPatternPath)
   @DELETE
@@ -107,8 +119,13 @@ class JobManagementResource @Inject()(val jobScheduler: JobScheduler,
   def getStat(@PathParam("jobName") jobName: String) : Response = {
     try {
       require(!jobGraph.lookupVertex(jobName).isEmpty, "Job '%s' not found".format(jobName))
-      val job = jobGraph.getJobForName(jobName).get
-      Response.ok(jobMetrics.getJsonStats(jobName)).build()
+
+      val histoStats = jobMetrics.getJobHistogramStats(jobName)
+      val jobStatsList: List[TaskStat] = jobScheduler.jobStats.getParsedJobStatsByName(jobName, 30)
+      val jobStatsWrapper = new JobStatWrapper(jobStatsList, histoStats)
+
+      val wrapperStr = objectMapper.writeValueAsString(jobStatsWrapper)
+      Response.ok(wrapperStr).build()
     } catch {
       case ex: IllegalArgumentException => {
         log.log(Level.INFO, "Bad Request", ex)
