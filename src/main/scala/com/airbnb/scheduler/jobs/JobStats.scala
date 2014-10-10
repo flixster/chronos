@@ -47,8 +47,22 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
   }
 
   def updateJobState(jobName: String, state: CurrentState.Value) {
-    log.info("Updating state for job (%s) to %s".format(jobName, state))
-    jobStates.put(jobName, state)
+    var shouldUpdate = true
+    jobStates.get(jobName) match {
+      case Some(s: CurrentState.Value) => {
+        if ((s == CurrentState.running) &&
+            (state == CurrentState.queued)) {
+          //don't update status if already running
+          shouldUpdate = false
+        }
+      }
+      case None =>
+    }
+
+    if (shouldUpdate) {
+      log.info("Updating state for job (%s) to %s".format(jobName, state))
+      jobStates.put(jobName, state)
+    }
   }
 
   def getSession: Option[Session] = {
