@@ -6,6 +6,7 @@
     <th>Start Time</th>
     <th>End Time</th>
     <th style="text-align:center">Duration</th>
+    <th style="text-align:center">Processed</th>
     <th style="text-align:center">Status</th>
   </tr>
 {{#each tasks}}
@@ -14,6 +15,7 @@
     <td>{{startTime}}</td>
     <td>{{endTime}}</td>
     <td style="text-align:center">{{duration}}</td>
+    <td style="text-align:center">{{numElementsProcessed}}</td>
     <td style="text-align:center" {{#if statusClass}}class="count-{{statusClass}}"{{/if}}>{{status}}</td>
   </tr>
 {{/each}}

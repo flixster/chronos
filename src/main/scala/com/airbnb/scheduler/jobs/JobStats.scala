@@ -102,6 +102,24 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
                     | compaction = {'class':'LeveledCompactionStrategy'}
                   """.stripMargin
               ))
+
+              /*
+               * highest bloom filter to reduce memory consumption and reducing
+               * false positives
+               */
+              session.execute(new SimpleStatement(
+                s"CREATE TABLE IF NOT EXISTS ${config.cassandraStatCountTable()}" +
+                  """
+                    |(
+                    |   task_id              VARCHAR,
+                    |   job_name             VARCHAR,
+                    |   elements_processed   COUNTER,
+                    | PRIMARY KEY (job_name, task_id))
+                    | WITH bloom_filter_fp_chance=0.100000 AND
+                    | compaction = {'class':'LeveledCompactionStrategy'}
+                  """.stripMargin
+              ))
+
               _session = Some(session)
               _session
             } catch {
@@ -169,6 +187,53 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
         log.log(Level.WARNING,"Query validation failed:", e)
     }
     rowsListFinal
+  }
+
+  /**
+   * Queries Cassandra stat table to get the element processed count
+   * for a specific job and a specific task
+   * @param jobName
+   * @param taskId
+   * @return element processed count
+   */
+  private def getTaskStatCount(jobName: String, taskId: String): Option[Long] = {
+    var taskStatCount: Option[Long] = None
+    try {
+      getSession match {
+        case Some(session: Session) => {
+          val query = s"SELECT * FROM ${config.cassandraStatCountTable()} WHERE job_name='${jobName}' AND task_id='${taskId}';"
+          val prepared = statements.getOrElseUpdate(query, {
+            session.prepare(
+              new SimpleStatement(query)
+                .asInstanceOf[RegularStatement]
+            )
+          })
+          val resultSet = session.execute(prepared.bind())
+
+          //should just be one row
+          val resultRow = resultSet.one()
+          if (resultRow != null) {
+            var cDef = resultRow.getColumnDefinitions()
+            if (cDef.contains("elements_processed")) {
+              taskStatCount = Some(resultRow.getLong("elements_processed"))
+            }
+          } else {
+            log.info("No elements processed count found for job_name %s taskId %s".format(jobName, taskId))
+          }
+
+        }
+        case None => taskStatCount = None
+      }
+    } catch {
+      case e: NoHostAvailableException =>
+        resetSession()
+        log.log(Level.WARNING, "No hosts were available, will retry next time.", e)
+      case e: QueryExecutionException =>
+        log.log(Level.WARNING,"Query execution failed:", e)
+      case e: QueryValidationException =>
+        log.log(Level.WARNING,"Query validation failed:", e)
+    }
+    taskStatCount
   }
 
   /**
@@ -264,7 +329,63 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
 
     //limit here
     sortedDescTaskStatList = sortedDescTaskStatList.slice(0, numTasks)
+
+    //retrieve stat count for these tasks
+    for (taskStat <- sortedDescTaskStatList) {
+      var elementCount = getTaskStatCount(taskStat.jobName, taskStat.taskId)
+      taskStat.numElementsProcessed = elementCount
+    }
+
     sortedDescTaskStatList
+  }
+
+  /**
+   * Updates the number of elements processed by a task. This method
+   * is not idempotent
+   * @param jobName
+   * @param taskId
+   * @param addtionalElementsProcessed
+   */
+  def updateTaskProgress(jobName: String,
+      taskId: String,
+      additionalElementsProcessed: Long) {
+    try {
+      getSession match {
+        case Some(session: Session) =>
+          val validateQuery = s"SELECT * FROM ${config.cassandraTable()} WHERE job_name='${jobName}' AND id='${taskId}';"
+          var prepared = statements.getOrElseUpdate(validateQuery, {
+            session.prepare(
+              new SimpleStatement(validateQuery)
+                .asInstanceOf[RegularStatement]
+            )
+          })
+          val validateResultSet = session.execute(prepared.bind())
+
+          if (validateResultSet.one() != null) {
+            val query = s"UPDATE ${config.cassandraStatCountTable()}"+
+              s" SET elements_processed = elements_processed + ${additionalElementsProcessed}"+
+              s" WHERE job_name='${jobName}' AND task_id='${taskId}';"
+            prepared = statements.getOrElseUpdate(query, {
+              session.prepare(
+                new SimpleStatement(query)
+                  .asInstanceOf[RegularStatement]
+              )
+            })
+          } else {
+            throw new IllegalArgumentException("Task id  %s not found".format(taskId))
+          }
+          val resultSet = session.executeAsync(prepared.bind())
+        case None =>
+      }
+    } catch {
+      case e: NoHostAvailableException =>
+        resetSession()
+        log.log(Level.WARNING, "No hosts were available, will retry next time.", e)
+      case e: QueryExecutionException =>
+        log.log(Level.WARNING,"Query execution failed:", e)
+      case e: QueryValidationException =>
+        log.log(Level.WARNING,"Query validation failed:", e)
+    }
   }
 
   def jobQueued(job: BaseJob, attempt: Int) {
