@@ -162,6 +162,37 @@ class JobManagementResource @Inject()(val jobScheduler: JobScheduler,
     }
   }
 
+  @POST
+  @Path(PathConstants.jobTaskProgressPath)
+  def updateTaskProgress(@PathParam("jobName") jobName: String,
+          @PathParam("taskId") taskId: String,
+          taskStat: TaskStat) : Response = {
+    try {
+      require(!jobGraph.lookupVertex(jobName).isEmpty, "Job '%s' not found".format(jobName))
+      require(TaskUtils.isValidVersion(taskId), "Invalid task id format %s".format(taskId))
+
+      val numAdditionalProcessed = taskStat.numAdditionalElementsProcessed match {
+        case Some(num: Int) => num
+        case None => 0
+      }
+      require(numAdditionalProcessed > 0,
+          "numAdditionalElementsProcessed (%d) is not positive".format(numAdditionalProcessed))
+
+      jobScheduler.jobStats.updateTaskProgress(jobName, taskId, numAdditionalProcessed)
+      Response.noContent().build
+    } catch {
+      case ex: IllegalArgumentException => {
+        log.log(Level.INFO, "Bad Request", ex)
+        Response.status(Response.Status.BAD_REQUEST).entity(ex.getMessage)
+          .build()
+      }
+      case ex: Exception => {
+        log.log(Level.WARNING, "Exception while serving request", ex)
+        Response.serverError().build
+      }
+    }
+  }
+
   @Path(PathConstants.allJobsPath)
   @GET
   @Timed
