@@ -121,7 +121,7 @@ class JobManagementResource @Inject()(val jobScheduler: JobScheduler,
       require(!jobGraph.lookupVertex(jobName).isEmpty, "Job '%s' not found".format(jobName))
 
       val histoStats = jobMetrics.getJobHistogramStats(jobName)
-      val jobStatsList: List[TaskStat] = jobScheduler.jobStats.getParsedJobStatsByName(jobName, 5)
+      val jobStatsList: List[TaskStat] = jobScheduler.jobStats.getParsedJobStatsByName(jobName, 30)
       val jobStatsWrapper = new JobStatWrapper(jobStatsList, histoStats)
 
       val wrapperStr = objectMapper.writeValueAsString(jobStatsWrapper)
