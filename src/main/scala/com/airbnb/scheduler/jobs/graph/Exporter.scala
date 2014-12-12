@@ -37,7 +37,7 @@ object Exporter {
     val jobMap = new HashMap[String, BaseJob]
     import scala.collection.JavaConversions._
     dag.vertexSet.flatMap(jobGraph.lookupVertex).foreach(x => jobMap.put(x.name, x))
-    jobMap.foreach({ case (k, v) => w.write("node,%s,%s,%s\n".format(k,getLastState(v).toString,jobScheduler.jobStats.getJobState(k)) ) })
+    jobMap.foreach({ case (k, v) => w.write("node,%s,%s,%s\n".format(k,getLastState(v).toString,jobScheduler.jobStats.getJobState(k).toString()) ) })
     for (e: DefaultEdge <- dag.edgeSet) {
       val source = dag.getEdgeSource(e)
       val target = dag.getEdgeTarget(e)

@@ -181,6 +181,9 @@ class MesosJobFramework @Inject()(
         scheduler.handleFailedTask(taskStatus)
       case TaskState.TASK_RUNNING =>
         log.info("Task with id '%s' RUNNING.".format(taskStatus.getTaskId.getValue))
+      case TaskState.TASK_KILLED =>
+        log.info("Task with id '%s' KILLED.".format(taskStatus.getTaskId.getValue))
+        scheduler.handleKilledTask(taskStatus)
       case _ =>
         log.warning("Unknown TaskState:" + taskStatus.getState + " for task: " + taskStatus.getTaskId.getValue)
     }

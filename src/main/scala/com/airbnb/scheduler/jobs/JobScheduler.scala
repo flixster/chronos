@@ -453,6 +453,34 @@ class JobScheduler @Inject()(val scheduleHorizon: Period,
   }
 
   /**
+   * Task has been killed. Do appropriate cleanup
+   * Possible reasons for task being killed:
+   *   -invoked kill via task manager API
+   *   -job is deleted
+   */
+  def handleKilledTask(taskStatus: TaskStatus) {
+    val taskId = taskStatus.getTaskId.getValue
+    if (!TaskUtils.isValidVersion(taskId)) {
+      log.warning("Found old or invalid task, ignoring!")
+      return
+    }
+
+    val (jobName, start, attempt) = TaskUtils.parseTaskId(taskId)
+    val jobOption = jobGraph.lookupVertex(jobName)
+
+    var job :BaseJob = null
+    if (!jobOption.isEmpty) {
+      job = jobOption.get
+      jobStats.jobFailed(job=job, attempt=attempt,
+          taskStatus=taskStatus)
+    } else {
+      //for now just fake schedule based job
+      jobStats.jobFailed(jobName=jobName, taskStatus=taskStatus,
+          attempt=attempt)
+    }
+  }
+
+  /**
    * Iterates through the stream for the given DateTime and a list of schedules, removing old schedules and acting on
    * the available schedules.
    * @param dateTime
