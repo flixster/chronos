@@ -6,6 +6,7 @@ import com.google.inject.Inject
 import com.datastax.driver.core._
 import com.datastax.driver.core.exceptions.{DriverException, QueryValidationException, QueryExecutionException, NoHostAvailableException}
 import com.datastax.driver.core.Row
+import com.datastax.driver.core.querybuilder.{QueryBuilder, Insert}
 
 import org.apache.mesos.Protos.{TaskState, TaskStatus}
 import org.joda.time.DateTime
@@ -24,13 +25,26 @@ object CurrentState extends Enumeration {
 
 class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: CassandraConfiguration) {
 
+  // Cassandra table column names
+  private val TASK_ID: String  = "id"
+  private val TIMESTAMP: String = "ts"
+  private val JOB_NAME: String = "job_name"
+  private val JOB_OWNER: String = "job_owner"
+  private val JOB_SCHEDULE: String = "job_schedule"
+  private val JOB_PARENTS: String = "job_parents"
+  private val TASK_STATE: String = "task_state"
+  private val SLAVE_ID: String = "slave_id"
+  private val MESSAGE: String = "message"
+  private val ATTEMPT: String = "attempt"
+  private val IS_FAILURE: String = "is_failure"
+
   protected val jobStates = new HashMap[String, CurrentState.Value]()
 
   val log = Logger.getLogger(getClass.getName)
   var _session: Option[Session] = None
   val statements  = new ConcurrentHashMap[String, PreparedStatement]().asScala
 
-  def getJobState(jobName: String) : String = {
+  def getJobState(jobName: String) : CurrentState.Value = {
     /**
      * MIKE NOTE: currently everything stored in memory, look into moving
      * this to Cassandra. ZK is not an option cause serializers and
@@ -39,9 +53,9 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
      */
     val status = jobStates.get(jobName) match {
       case Some(s) =>
-        s.toString()
+        s
       case _ =>
-        CurrentState.idle.toString()
+        CurrentState.idle
     }
     status
   }
@@ -561,5 +575,103 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
       case e: QueryValidationException =>
         log.log(Level.WARNING,"Query validation failed:", e)
     }
+  }
+
+  /**
+   * Overloaded method of jobFailed. Reports that a job identified by only
+   * its job name failed during execution. This is only used to report
+   * a failure when there is no corresponding job object, which only happens
+   * when a job is destroyed. When a job is destroyed, all tasks are killed
+   * and this method is called when a task is killed.
+   * @param jobName
+   * @param taskStatus
+   * @param attempt
+   */
+  def jobFailed(jobName: String, taskStatus: TaskStatus, attempt: Int) {
+    updateJobState(jobName, CurrentState.idle)
+
+    insertToStatTable(
+        id=Some(taskStatus.getTaskId.getValue),
+        timestamp=Some(new java.util.Date()),
+        jobName=Some(jobName),
+        jobOwner=None, jobSchedule=None, jobParents=None,
+        taskState=Some(taskStatus.getState().toString()),
+        slaveId=Some(taskStatus.getSlaveId().getValue()),
+        message=Some(taskStatus.getMessage()),
+        attempt=Some(attempt),
+        isFailure=Some(true))
+  }
+
+  /**
+   * Helper method that performs an insert statement to update the
+   * job statistics (chronos) table. All arguments are surrounded
+   * by options so that a subset of values can be inserted.
+   */
+  private def insertToStatTable(id: Option[String],
+      timestamp: Option[java.util.Date],
+      jobName: Option[String],
+      jobOwner: Option[String],
+      jobSchedule: Option[String],
+      jobParents: Option[java.util.Set[String]],
+      taskState: Option[String],
+      slaveId: Option[String],
+      message: Option[String],
+      attempt: Option[Integer],
+      isFailure: Option[Boolean]) = {
+	try {
+      getSession match {
+        case Some(session: Session) =>
+          var query:Insert = QueryBuilder.insertInto(config.cassandraTable())
+
+          //set required values (let these throw an exception)
+          query.value(TASK_ID , id.get)
+            .value(JOB_NAME , jobName.get)
+            .value(TIMESTAMP , timestamp.get)
+
+          jobSchedule match {
+            case Some(js: String) => query.value(JOB_SCHEDULE , js)
+            case _ =>
+          }
+          jobParents match {
+            case Some(jp: java.util.Set[String]) => query.value(JOB_PARENTS , jp)
+            case _ =>
+          }
+          taskState match {
+            case Some(ts: String) => query.value(TASK_STATE , ts)
+            case _ =>
+          }
+          slaveId match {
+            case Some(s: String) => query.value(SLAVE_ID , s)
+            case _ =>
+          }
+          message match {
+            case Some(m: String) => query.value(MESSAGE , m)
+            case _ =>
+          }
+          attempt match {
+            case Some(a: Integer) => query.value(ATTEMPT , a)
+            case _ =>
+          }
+          isFailure match {
+            case Some(f: Boolean) => query.value(IS_FAILURE , f)
+            case _ =>
+          }
+
+          query.setConsistencyLevel(ConsistencyLevel.valueOf(config.cassandraConsistency()))
+            .asInstanceOf[RegularStatement]
+
+          session.executeAsync(query)
+        case None =>
+      }
+    } catch {
+      case e: NoHostAvailableException =>
+        resetSession()
+        log.log(Level.WARNING, "No hosts were available, will retry next time.", e)
+      case e: QueryExecutionException =>
+        log.log(Level.WARNING,"Query execution failed:", e)
+      case e: QueryValidationException =>
+        log.log(Level.WARNING,"Query validation failed:", e)
+    }
+
   }
 }
