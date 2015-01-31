@@ -42,8 +42,9 @@ class SerDeTest extends SpecificationWithJUnit {
       )
       
       val a = new DependencyBasedJob(Set("B", "C", "D", "E"), "A", "noop", Minutes.minutes(5).toPeriod, 10L,
-        20L, "fooexec", "fooflags", 7, "foo@bar.com", "TODAY", "YESTERDAY", true, container = container,
-        environmentVariables = environmentVariables, shell = false, arguments = arguments)
+        20L, "fooexec", "fooflags", 7, "foo@bar.com", "Foo", "Test dependency-based job", "TODAY", 
+        "YESTERDAY", true, container = container, environmentVariables = environmentVariables, 
+        shell = false, arguments = arguments)
 
       val aStr = objectMapper.writeValueAsString(a)
       val aCopy = objectMapper.readValue(aStr, classOf[DependencyBasedJob])
@@ -75,8 +76,9 @@ class SerDeTest extends SpecificationWithJUnit {
       )
       
       val a = new ScheduleBasedJob("FOO/BAR/BAM", "A", "noop", Minutes.minutes(5).toPeriod, 10L, 20L,
-        "fooexec", "fooflags", 7, "foo@bar.com", "TODAY", "YESTERDAY", true, container = container,
-        environmentVariables = environmentVariables, shell = true, arguments = arguments)
+        "fooexec", "fooflags", 7, "foo@bar.com", "Foo", "Test schedule-based job", "TODAY", 
+        "YESTERDAY", true, container = container, environmentVariables = environmentVariables, 
+        shell = true, arguments = arguments)
 
       val aStr = objectMapper.writeValueAsString(a)
       val aCopy = objectMapper.readValue(aStr, classOf[ScheduleBasedJob])
