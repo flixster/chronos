@@ -52,8 +52,19 @@ class TaskStat (@JsonProperty val taskId: String,
   }
 
   def setTaskStartTs(startTs: Date) = {
+	//update taskStartTs if new value is older
     val taskStartDatetime = new DateTime(startTs)
-    taskStartTs = Some(taskStartDatetime)
+    taskStartTs = taskStartTs match {
+      case Some(currTs: DateTime) =>
+        if (taskStartDatetime.isBefore(currTs)) {
+          Some(taskStartDatetime)
+        } else {
+          Some(currTs)
+        }
+      case None =>
+        Some(taskStartDatetime)
+    }
+
     taskEndTs match {
       case Some(ts) =>
         taskDuration = Some(new Duration(taskStartDatetime, ts))
