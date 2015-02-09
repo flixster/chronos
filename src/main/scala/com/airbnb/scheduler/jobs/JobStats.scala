@@ -169,17 +169,7 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
     try {
       getSession match {
         case Some(session: Session) =>
-          /*
-           * NOTE: increasing limit by 4 cause each tasks on average takes
-           * 2-3 entries in the table
-           */
-          val numTasksLimit = numTasks * 4
-
-          /*
-           * Since the numTasksLimit does not change that much, it is fair to
-           * cache the prepared queries
-           */
-          val query = s"SELECT * FROM ${config.cassandraTable()} WHERE job_name='${jobName}' ORDER BY id DESC LIMIT ${numTasksLimit};"
+          val query = s"SELECT * FROM ${config.cassandraTable()} WHERE job_name='${jobName}' ORDER BY id DESC;"
           val prepared = statements.getOrElseUpdate(query, {
             session.prepare(
               new SimpleStatement(query)
@@ -545,7 +535,7 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
               ))
             case job: DependencyBasedJob =>
               val query =
-                s"INSERT INTO ${config.cassandraTable} (id, ts, job_name, job_owner, job_parents, task_state, slave_id, attempt, message, is_failure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, true) USING TTL ${config.cassandraTtl()}"
+                s"INSERT INTO ${config.cassandraTable()} (id, ts, job_name, job_owner, job_parents, task_state, slave_id, attempt, message, is_failure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, true) USING TTL ${config.cassandraTtl()}"
               val prepared = statements.getOrElseUpdate(query, {
                 session.prepare(
                   new SimpleStatement(query).setConsistencyLevel(ConsistencyLevel.valueOf(config.cassandraConsistency())).asInstanceOf[RegularStatement]
