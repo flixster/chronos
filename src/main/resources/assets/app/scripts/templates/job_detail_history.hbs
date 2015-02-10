@@ -5,18 +5,18 @@
     <th>Task Id</th>
     <th>Start Time</th>
     <th>End Time</th>
-    <th style="text-align:center">Duration</th>
-    <th style="text-align:center">Processed</th>
-    <th style="text-align:center">Status</th>
+    <th class="text-center">Duration</th>
+    <th class="text-center">Processed</th>
+    <th class="text-center">Status</th>
   </tr>
 {{#each tasks}}
   <tr>
     <td>{{taskId}}</td>
     <td>{{startTime}}</td>
     <td>{{endTime}}</td>
-    <td style="text-align:center">{{duration}}</td>
-    <td style="text-align:center">{{numElementsProcessed}}</td>
-    <td style="text-align:center" {{#if statusClass}}class="count-{{statusClass}}"{{/if}}>{{status}}</td>
+    <td class="text-center">{{duration}}</td>
+    <td class="text-center">{{numElementsProcessed}}</td>
+    <td class="text-center {{#if statusClass}}count-{{statusClass}}{{/if}}">{{status}}</td>
   </tr>
 {{/each}}
 </table>

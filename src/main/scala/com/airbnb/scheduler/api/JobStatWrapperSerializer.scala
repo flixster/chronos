@@ -58,6 +58,7 @@ class JobStatWrapperSerializer extends JsonSerializer[JobStatWrapper] {
             .appendDays().appendSuffix("d")
             .appendHours().appendSuffix("h")
             .appendMinutes().appendSuffix("m")
+            .printZeroIfSupported()
             .appendSeconds().appendSuffix("s")
             .toFormatter()
 
