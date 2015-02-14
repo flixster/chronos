@@ -169,21 +169,7 @@ class JobStats @Inject() (clusterBuilder: Option[Cluster.Builder], config: Cassa
     try {
       getSession match {
         case Some(session: Session) =>
-          /*
-           * NOTE: Currently a single task may have multiple rows based on
-           * how long the task takes to finish. On average a short task takes
-           * 2-3 entries, while longer tasks (9 hour tasks) takes roughly 50
-           * entries. As the table grows querying all entries is inefficient,
-           * hence a limit is introduced. The limit is the numTasks multipled
-           * by 100. This should cover most cases.
-           */
-          val numTasksLimit = numTasks * 100
-
-          /*
-           * Since the numTasksLimit does not change that much, it is fair to
-           * cache the prepared queries
-           */
-          val query = s"SELECT * FROM ${config.cassandraTable()} WHERE job_name='${jobName}' ORDER BY id DESC LIMIT ${numTasksLimit};"
+          val query = s"SELECT * FROM ${config.cassandraTable()} WHERE job_name='${jobName}' ORDER BY id DESC;"
           val prepared = statements.getOrElseUpdate(query, {
             session.prepare(
               new SimpleStatement(query)
